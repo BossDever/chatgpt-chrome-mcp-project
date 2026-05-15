@@ -25,6 +25,8 @@ This is the first documented stable baseline for the local
 - Conservative structured CDP read mode on `chatgpt_cdp_read`, with
   visible-DOM coverage warnings, role confidence, text hashes, and truncation
   metadata while keeping raw mode as the default.
+- Structured-only reads sanitize raw conversation text, hashes, and text-length
+  metadata from `page.state` unless raw fallback is requested.
 - Consolidated check script: `npm run check`.
 - Release smoke command: `npm run check:smoke`.
 - Documentation snapshot in `docs/STABLE_BASELINE.md` and

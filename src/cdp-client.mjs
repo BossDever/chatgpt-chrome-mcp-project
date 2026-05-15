@@ -515,8 +515,14 @@ function sanitizeStateForStructuredRead(state) {
     formText: "",
     conversationTurns: [],
     conversationText: "",
+    conversationTextHash: "",
+    conversationTextLength: 0,
     lastUserText: "",
+    lastUserTextHash: "",
+    lastUserTextLength: 0,
     lastAssistantText: "",
+    lastAssistantTextHash: "",
+    lastAssistantTextLength: 0,
   };
 }
 

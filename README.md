@@ -78,6 +78,9 @@ boundaries. See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the runbook.
   `chatgpt_cdp_read` defaults to raw conversation text, and also supports
   `mode="structured"` for a token-conscious visible-DOM turn view with
   coverage warnings and truncation metadata.
+- `chatgpt_cdp_list_artifacts`: read-only CDP diagnostic for visible images,
+  likely generated images, image placeholders, and download-like controls. Use
+  this before deciding whether a generated image/file can be downloaded.
 - `chatgpt_cdp_send_and_wait`: main CDP workflow for agents. It submits a
   message, verifies that the user's own turn appeared, waits for the assistant
   reply after that user turn to stabilize, and returns turn hashes/timings.
@@ -181,8 +184,8 @@ verifies the composer is clean again:
 npm run smoke:mcp -- --require-cdp --require-binding --upload-remove-file .\chatgpt_paste_upload_test.txt
 ```
 
-The smoke script starts the MCP server over stdio, asserts the expected 26-tool
-surface, verifies 12 CDP tools and 14 UIA tools, checks `chrome_cdp_status`, and
+The smoke script starts the MCP server over stdio, asserts the expected 27-tool
+surface, verifies 13 CDP tools and 14 UIA tools, checks `chrome_cdp_status`, and
 when a default binding exists reads `chatgpt_cdp_get_state` with
 `strictBinding=true`.
 

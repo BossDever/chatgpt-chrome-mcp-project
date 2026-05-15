@@ -110,12 +110,13 @@ async function main() {
     const chromeCdpToolCount = countByPrefix(names, "chrome_cdp_");
     const uiaToolCount = countByPrefix(names, "chatgpt_") - chatgptCdpToolCount;
 
-    assert.equal(names.length, 26, "unexpected MCP tool count");
-    assert.equal(chatgptCdpToolCount + chromeCdpToolCount, 12, "unexpected CDP tool count");
+    assert.equal(names.length, 27, "unexpected MCP tool count");
+    assert.equal(chatgptCdpToolCount + chromeCdpToolCount, 13, "unexpected CDP tool count");
     assert.equal(uiaToolCount, 14, "unexpected UIA tool count");
     assert(names.includes("chrome_cdp_status"), "missing chrome_cdp_status");
     assert(names.includes("chatgpt_cdp_get_state"), "missing chatgpt_cdp_get_state");
     assert(names.includes("chatgpt_cdp_get_bound_tab"), "missing chatgpt_cdp_get_bound_tab");
+    assert(names.includes("chatgpt_cdp_list_artifacts"), "missing chatgpt_cdp_list_artifacts");
 
     const status = await client.callTool({ name: "chrome_cdp_status", arguments: {} });
     const cdpAvailable = status.structuredContent?.ok === true;

@@ -850,6 +850,112 @@ export async function readCdpPage({
   });
 }
 
+export async function listCdpArtifacts({
+  baseUrl = defaultCdpBaseUrl(),
+  tabId,
+  maxItems = 50,
+} = {}) {
+  const normalized = normalizeBaseUrl(baseUrl);
+  const tab = await findCdpTab({ baseUrl: normalized, tabId });
+  assertChatGptTab(tab);
+
+  return withCdpTab(tab, async (session) => {
+    const artifacts = await evaluateCdp(session, `(() => {
+      const maxItems = ${JSON.stringify(maxItems)};
+      const isVisible = (el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const textOf = (el) => (el?.innerText || el?.textContent || "").replace(/\\s+/g, " ").trim();
+      const rectOf = (el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
+      };
+      const images = [...document.images]
+        .filter(isVisible)
+        .slice(0, maxItems)
+        .map((img, index) => {
+          const src = img.currentSrc || img.src || "";
+          const srcKind = src.startsWith("blob:") ? "blob" : src.startsWith("data:") ? "data" : src.startsWith("http") ? "http" : "other";
+          const surroundingText = textOf(img.closest("[data-message-author-role], article, main, div")).slice(0, 240);
+          const likelyUiAsset = /openai|chatgpt|avatar|profile|gravatar|googleusercontent\\.com\\/(a\\/|ogw\\/)|favicon|sprite|logo/i.test(src) ||
+            /avatar|profile/i.test(img.alt || surroundingText);
+          const likelyGenerated = !likelyUiAsset && (
+            srcKind === "blob" ||
+            srcKind === "data" ||
+            (img.naturalWidth >= 256 && img.naturalHeight >= 256)
+          );
+          return {
+            index,
+            type: "image",
+            srcKind,
+            srcPreview: src.slice(0, 240),
+            alt: img.alt || "",
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+            rect: rectOf(img),
+            surroundingText,
+            likelyUiAsset,
+            likelyGenerated,
+          };
+        });
+      const downloadControls = [...document.querySelectorAll("button, a, [role='button']")]
+        .filter(isVisible)
+        .map((el, index) => {
+          const label = [
+            el.getAttribute("aria-label") || "",
+            el.getAttribute("title") || "",
+            el.getAttribute("download") || "",
+            el.href || "",
+            textOf(el),
+            el.getAttribute("data-testid") || "",
+            el.getAttribute("data-test-id") || "",
+            String(el.className || ""),
+          ].join(" ").replace(/\\s+/g, " ").trim();
+          return {
+            index,
+            type: "download_control",
+            tagName: el.tagName,
+            label: label.slice(0, 240),
+            hrefKind: (el.href || "").startsWith("blob:") ? "blob" : (el.href || "").startsWith("data:") ? "data" : (el.href || "").startsWith("http") ? "http" : "",
+            hrefPreview: (el.href || "").slice(0, 240),
+            rect: rectOf(el),
+          };
+        })
+        .filter((entry) => /download|save as|save image|ดาวน์โหลด|บันทึก|blob:|data:/i.test(entry.label))
+        .slice(0, maxItems);
+      const imagePlaceholders = [...document.querySelectorAll("[data-message-author-role] p, article p, main p")]
+        .map((el, index) => ({ el, index, text: textOf(el) }))
+        .filter((entry) => /\\[\\s*image\\s*:/i.test(entry.text))
+        .slice(0, maxItems)
+        .map((entry) => ({
+          index: entry.index,
+          type: "image_placeholder",
+          text: entry.text.slice(0, 500),
+          rect: rectOf(entry.el),
+        }));
+      return {
+        url: location.href,
+        title: document.title,
+        imageCount: images.length,
+        likelyGeneratedImageCount: images.filter((image) => image.likelyGenerated).length,
+        downloadControlCount: downloadControls.length,
+        imagePlaceholderCount: imagePlaceholders.length,
+        images,
+        downloadControls,
+        imagePlaceholders,
+      };
+    })()`, 10000);
+    return { ok: true, tab, artifacts };
+  });
+}
+
 export async function sendCdpMessage({
   baseUrl = defaultCdpBaseUrl(),
   tabId,

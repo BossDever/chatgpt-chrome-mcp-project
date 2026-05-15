@@ -19,11 +19,13 @@ UI Automation path remains available as a visible-Chrome fallback.
 8. Use `chatgpt_cdp_read` with `mode="structured"` only when visible-DOM
    structured turns are useful; keep `mode="raw"` or `mode="combined"` for
    diagnostics that need non-conversation page text.
+9. Use `chatgpt_cdp_list_artifacts` to inspect visible image/download artifacts
+   before choosing a download path.
 
 ## Stable Tool Surface
 
-- Total MCP tools: 26
-- CDP tools: 12
+- Total MCP tools: 27
+- CDP tools: 13
 - UIA/visible-Chrome tools: 14
 
 The regression smoke script asserts these counts so schema or registration

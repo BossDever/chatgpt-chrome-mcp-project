@@ -6,6 +6,7 @@ import test from "node:test";
 import { parseHTML } from "linkedom";
 
 import {
+  buildStructuredVisibleDomRead,
   extractAttachmentCandidatesFromComposer,
   extractConversationTurnsFromDocument,
   findSendButton,
@@ -118,4 +119,70 @@ test("fixture upload menu selection supports English upload labels", () => {
   `).document;
 
   assert.equal(findUploadMenuItem(document, { isVisible: () => true })?.id, "upload");
+});
+
+test("structured visible-DOM read reports truncation and conservative coverage", () => {
+  const document = parseHTML(`
+    <main>
+      <div data-message-author-role="user">Short question</div>
+      <div data-message-author-role="assistant">This assistant response is intentionally long.</div>
+      <button aria-label="Stop generating">Stop</button>
+    </main>
+  `).document;
+
+  const structured = buildStructuredVisibleDomRead({
+    doc: document,
+    maxTurns: 1,
+    maxCharsPerTurn: 12,
+  });
+
+  assert.equal(structured.mode, "structured_visible_dom");
+  assert.equal(structured.completeConversation, false);
+  assert.equal(structured.virtualizationPossible, true);
+  assert.deepEqual(structured.coverageWarnings, [
+    "VISIBLE_DOM_ONLY",
+    "MAX_TURNS_APPLIED",
+    "STREAMING_IN_PROGRESS",
+    "TURN_TRUNCATED",
+  ]);
+  assert.equal(structured.totalVisibleTurns, 2);
+  assert.equal(structured.returnedTurnCount, 1);
+  assert.equal(structured.turns[0].role, "assistant");
+  assert.equal(structured.turns[0].roleConfidence, "high");
+  assert.equal(structured.turns[0].text, "This assista");
+  assert.equal(structured.turns[0].truncated, true);
+  assert.equal(structured.turns[0].omittedChars > 0, true);
+});
+
+test("structured visible-DOM read marks unknown roles without guessing", () => {
+  const document = parseHTML(`
+    <main>
+      <div data-message-author-role="critic">Unexpected role text</div>
+    </main>
+  `).document;
+
+  const structured = buildStructuredVisibleDomRead({ doc: document });
+
+  assert.equal(structured.turns[0].role, "unknown");
+  assert.equal(structured.turns[0].roleConfidence, "low");
+  assert.equal(structured.coverageWarnings.includes("ROLE_DETECTION_LOW_CONFIDENCE"), true);
+});
+
+test("structured visible-DOM read does not treat composer attachments as turns", () => {
+  const document = parseHTML(`
+    <main>
+      <div data-message-author-role="user">Real user turn</div>
+      <form>
+        <div id="prompt-textarea"></div>
+        <div role="group" aria-label="file.txt">
+          <button aria-label="Remove file.txt">x</button>
+        </div>
+      </form>
+    </main>
+  `).document;
+
+  const structured = buildStructuredVisibleDomRead({ doc: document });
+
+  assert.equal(structured.returnedTurnCount, 1);
+  assert.equal(structured.turns[0].text, "Real user turn");
 });

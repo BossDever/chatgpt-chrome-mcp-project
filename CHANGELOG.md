@@ -22,6 +22,9 @@ This is the first documented stable baseline for the local
 - Runtime smoke script: `npm run smoke:mcp`.
 - Optional live CDP upload/remove smoke via
   `npm run smoke:mcp -- --upload-remove-file <path>`.
+- Conservative structured CDP read mode on `chatgpt_cdp_read`, with
+  visible-DOM coverage warnings, role confidence, text hashes, and truncation
+  metadata while keeping raw mode as the default.
 - Consolidated check script: `npm run check`.
 - Release smoke command: `npm run check:smoke`.
 - Documentation snapshot in `docs/STABLE_BASELINE.md` and

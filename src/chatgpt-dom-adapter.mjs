@@ -90,6 +90,87 @@ export function extractConversationTurnsFromDocument(doc = document) {
   }));
 }
 
+export function truncateText(text, maxChars) {
+  const value = String(text ?? "");
+  if (!Number.isInteger(maxChars) || maxChars < 0 || value.length <= maxChars) {
+    return {
+      text: value,
+      returnedChars: value.length,
+      chars: value.length,
+      truncated: false,
+      omittedChars: 0,
+    };
+  }
+  return {
+    text: value.slice(0, maxChars),
+    returnedChars: maxChars,
+    chars: value.length,
+    truncated: true,
+    omittedChars: value.length - maxChars,
+  };
+}
+
+export function buildStructuredVisibleDomRead({
+  doc = document,
+  maxTurns = 6,
+  maxCharsPerTurn = 6000,
+  includeText = true,
+} = {}) {
+  const allTurns = extractConversationTurnsFromDocument(doc);
+  const selectedTurns = Number.isInteger(maxTurns) && maxTurns > 0
+    ? allTurns.slice(-maxTurns)
+    : allTurns;
+  const coverageWarnings = ["VISIBLE_DOM_ONLY"];
+
+  if (selectedTurns.length < allTurns.length) {
+    coverageWarnings.push("MAX_TURNS_APPLIED");
+  }
+
+  const hasStreaming = Boolean(doc.querySelector(".result-streaming")) ||
+    [...doc.querySelectorAll("button, [role=button]")].some((el) => /stop/i.test(labelOf(el)));
+  if (hasStreaming) {
+    coverageWarnings.push("STREAMING_IN_PROGRESS");
+  }
+
+  const roleCounts = {};
+  const turns = selectedTurns.map((turn) => {
+    const normalizedRole = ["user", "assistant", "tool"].includes(turn.role) ? turn.role : "unknown";
+    roleCounts[normalizedRole] = (roleCounts[normalizedRole] || 0) + 1;
+    const clipped = truncateText(turn.text, maxCharsPerTurn);
+    if (clipped.truncated && !coverageWarnings.includes("TURN_TRUNCATED")) {
+      coverageWarnings.push("TURN_TRUNCATED");
+    }
+    if (normalizedRole === "unknown" && !coverageWarnings.includes("ROLE_DETECTION_LOW_CONFIDENCE")) {
+      coverageWarnings.push("ROLE_DETECTION_LOW_CONFIDENCE");
+    }
+    return {
+      index: turn.index,
+      role: normalizedRole,
+      roleConfidence: normalizedRole === "unknown" ? "low" : "high",
+      source: "visible_dom",
+      chars: clipped.chars,
+      returnedChars: includeText ? clipped.returnedChars : 0,
+      truncated: clipped.truncated,
+      omittedChars: clipped.omittedChars,
+      ...(includeText ? { text: clipped.text } : {}),
+    };
+  });
+
+  return {
+    mode: "structured_visible_dom",
+    completeConversation: false,
+    virtualizationPossible: true,
+    rawFallbackAvailable: true,
+    coverageWarnings,
+    totalVisibleTurns: allTurns.length,
+    returnedTurnCount: turns.length,
+    maxTurnsApplied: Number.isInteger(maxTurns) && maxTurns > 0 ? maxTurns : null,
+    maxCharsPerTurn,
+    roleCounts,
+    turns,
+  };
+}
+
 export function getLastTurn(turns, role) {
   return [...turns].reverse().find((turn) => turn.role === role) ?? null;
 }
@@ -154,6 +235,8 @@ export function chatGptDomAdapterScript() {
         const getAttachmentCandidateRecordsFromComposer = ${getAttachmentCandidateRecordsFromComposer.toString()};
         const extractAttachmentCandidatesFromComposer = ${extractAttachmentCandidatesFromComposer.toString()};
         const extractConversationTurnsFromDocument = ${extractConversationTurnsFromDocument.toString()};
+        const truncateText = ${truncateText.toString()};
+        const buildStructuredVisibleDomRead = ${buildStructuredVisibleDomRead.toString()};
         const getLastTurn = ${getLastTurn.toString()};
         const findSendButton = ${findSendButton.toString()};
         const isVisibleInViewport = ${isVisibleInViewport.toString()};
@@ -167,6 +250,8 @@ export function chatGptDomAdapterScript() {
           getAttachmentCandidateRecordsFromComposer,
           extractAttachmentCandidatesFromComposer,
           extractConversationTurnsFromDocument,
+          truncateText,
+          buildStructuredVisibleDomRead,
           getLastTurn,
           findSendButton,
           isVisibleInViewport,

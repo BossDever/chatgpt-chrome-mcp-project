@@ -75,6 +75,9 @@ boundaries. See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the runbook.
 - `chatgpt_cdp_read` / `chatgpt_cdp_send`: read or send in the bound tab
   without using the active Chrome tab, mouse, or Windows file picker. Sends are
   guarded against busy generation, pending attachments, and overwriting drafts.
+  `chatgpt_cdp_read` defaults to raw conversation text, and also supports
+  `mode="structured"` for a token-conscious visible-DOM turn view with
+  coverage warnings and truncation metadata.
 - `chatgpt_cdp_send_and_wait`: main CDP workflow for agents. It submits a
   message, verifies that the user's own turn appeared, waits for the assistant
   reply after that user turn to stabilize, and returns turn hashes/timings.
@@ -273,6 +276,18 @@ prefer the CDP workflow:
    If direct hidden-input upload does not produce a visible attachment, CDP
    upload falls back to file chooser interception and targets ChatGPT's
    localized upload menu item instead of scanning arbitrary page text.
+
+`chatgpt_cdp_read` supports `mode` values:
+
+- `raw`: default behavior; returns the raw visible conversation text.
+- `structured`: returns visible DOM turns with role confidence, text hashes,
+  `truncated`/`omittedChars`, and `coverageWarnings`. This is not a full
+  transcript export.
+- `combined`: returns both raw text and structured visible DOM turns.
+
+Use structured mode when an agent needs recent turns without dumping the whole
+page. Use raw or combined mode when diagnosing banners, rate limits, attachment
+UI, or other page text outside normal conversation turns.
 
 `chatgpt_cdp_send` refuses to submit when ChatGPT is still generating unless
 `force=true`, refuses to send pending attachments unless `allowAttachments=true`,

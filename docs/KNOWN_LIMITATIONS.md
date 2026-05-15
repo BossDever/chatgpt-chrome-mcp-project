@@ -46,3 +46,6 @@ depends on browser and page behavior that can change.
   callers can override that guard when needed.
 - Live smoke tests require a running CDP Chrome instance and, for strict checks,
   a saved default binding.
+- `chatgpt_cdp_read` structured mode only reports turns visible in the current
+  DOM. It can miss virtualized history and page-level banners, so use raw or
+  combined mode when debugging unusual UI states.

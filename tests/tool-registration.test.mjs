@@ -109,6 +109,10 @@ test("registerCdpTools preserves key CDP schema fields", () => {
     true,
   );
   assert.equal(schemaKeys("chatgpt_cdp_send").includes("strictBinding"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_read").includes("mode"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxTurns"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxCharsPerTurn"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_read").includes("includeRawFallback"), true);
   assert.equal(schemaKeys("chatgpt_cdp_upload_file").includes("strictBinding"), true);
   assert.equal(schemaKeys("chatgpt_cdp_remove_attachments").includes("strictBinding"), true);
   assert.equal(schemaKeys("chatgpt_cdp_remove_attachments").includes("removeAll"), true);

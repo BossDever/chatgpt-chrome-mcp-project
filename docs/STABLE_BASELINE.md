@@ -16,6 +16,9 @@ UI Automation path remains available as a visible-Chrome fallback.
 6. Use `chatgpt_cdp_upload_file` for non-mouse file attachment.
 7. Use `chatgpt_cdp_remove_attachments` after upload tests or before text-only
    messages.
+8. Use `chatgpt_cdp_read` with `mode="structured"` only when visible-DOM
+   structured turns are useful; keep `mode="raw"` or `mode="combined"` for
+   diagnostics that need non-conversation page text.
 
 ## Stable Tool Surface
 
@@ -74,6 +77,10 @@ run, and verifies the composer returns to zero attachments.
 The architecture and regression workflow are good enough for this stabilization
 stage. New work should start as a separate hardening or feature loop instead of
 continuing broad refactors.
+
+Structured CDP read mode is intentionally not a full transcript export. It is a
+visible-DOM snapshot with coverage warnings, role confidence, hashes, and
+truncation metadata. Raw read remains the default and fallback.
 
 Operational procedures and troubleshooting live in
 [OPERATIONS.md](OPERATIONS.md).

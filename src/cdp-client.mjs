@@ -478,6 +478,48 @@ async function collectCdpState(session, tab, maxChars = 20000) {
   };
 }
 
+async function collectStructuredCdpRead(
+  session,
+  {
+    maxTurns = 6,
+    maxCharsPerTurn = 6000,
+    includeText = true,
+  } = {},
+) {
+  const result = await evaluateCdp(
+    session,
+    `(() => {
+      ${chatGptDomAdapterScript()}
+      return chatGptDomAdapter.buildStructuredVisibleDomRead({
+        doc: document,
+        maxTurns: ${JSON.stringify(maxTurns)},
+        maxCharsPerTurn: ${JSON.stringify(maxCharsPerTurn)},
+        includeText: ${JSON.stringify(includeText)}
+      });
+    })()`,
+  );
+  return {
+    ...result,
+    turns: (result?.turns ?? []).map((turn) => ({
+      ...turn,
+      textHash: typeof turn.text === "string" ? sha256Text(turn.text) : null,
+      hashSource: typeof turn.text === "string" ? "returned_text" : "none",
+    })),
+  };
+}
+
+function sanitizeStateForStructuredRead(state) {
+  return {
+    ...state,
+    promptText: "",
+    formText: "",
+    conversationTurns: [],
+    conversationText: "",
+    lastUserText: "",
+    lastAssistantText: "",
+  };
+}
+
 export function getOwnUserTurnVerification({ beforeState, afterState, message }) {
   const expected = normalizeForTurnMatch(message);
   const actual = normalizeForTurnMatch(afterState?.lastUserText ?? "");
@@ -758,26 +800,45 @@ export async function getCdpState({ baseUrl = defaultCdpBaseUrl(), tabId, maxCha
   });
 }
 
-export async function readCdpPage({ baseUrl = defaultCdpBaseUrl(), tabId, maxChars = 20000 } = {}) {
+export async function readCdpPage({
+  baseUrl = defaultCdpBaseUrl(),
+  tabId,
+  maxChars = 20000,
+  mode = "raw",
+  maxTurns = 6,
+  maxCharsPerTurn = 6000,
+  includeRawFallback = false,
+  includeText = true,
+} = {}) {
   const normalized = normalizeBaseUrl(baseUrl);
   const tab = await findCdpTab({ baseUrl: normalized, tabId });
   assertChatGptTab(tab);
 
   return withCdpTab(tab, async (session) => {
-    const state = await collectCdpState(session, tab, maxChars);
+    const normalizedMode = ["raw", "structured", "combined"].includes(mode) ? mode : "raw";
+    const needsRaw = normalizedMode === "raw" || normalizedMode === "combined" || includeRawFallback;
+    const needsStructured = normalizedMode === "structured" || normalizedMode === "combined";
+    const state = needsRaw ? await collectCdpState(session, tab, maxChars) : await collectCdpState(session, tab, 1000);
+    const pageState = needsRaw ? state : sanitizeStateForStructuredRead(state);
+    const structured = needsStructured
+      ? await collectStructuredCdpRead(session, { maxTurns, maxCharsPerTurn, includeText })
+      : null;
     return {
       ok: true,
       tab,
       page: {
-        title: state.title,
-        url: state.url,
-        text: state.conversationText,
-        textLength: state.conversationTextLength,
-        hasPrompt: state.hasPrompt,
-        promptText: state.promptText,
-        conversationTurns: state.conversationTurns,
-        lastAssistantText: state.lastAssistantText,
-        state,
+        mode: normalizedMode,
+        title: pageState.title,
+        url: pageState.url,
+        text: needsRaw ? pageState.conversationText : "",
+        textLength: needsRaw ? pageState.conversationTextLength : 0,
+        hasPrompt: pageState.hasPrompt,
+        promptText: pageState.promptText,
+        conversationTurns: needsRaw ? pageState.conversationTurns : [],
+        lastAssistantText: needsRaw ? pageState.lastAssistantText : "",
+        structured,
+        rawFallbackIncluded: needsRaw,
+        state: pageState,
       },
     };
   });

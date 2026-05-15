@@ -316,6 +316,11 @@ export function registerCdpTools(server, deps) {
         useBoundTab: z.boolean().optional(),
         strictBinding: z.boolean().optional(),
         maxChars: z.number().int().min(100).max(200000).optional(),
+        mode: z.enum(["raw", "structured", "combined"]).optional(),
+        maxTurns: z.number().int().min(1).max(200).optional(),
+        maxCharsPerTurn: z.number().int().min(100).max(100000).optional(),
+        includeRawFallback: z.boolean().optional(),
+        includeText: z.boolean().optional(),
         requestId: z.string().optional(),
       },
       annotations: {
@@ -329,12 +334,26 @@ export function registerCdpTools(server, deps) {
       useBoundTab = true,
       strictBinding = false,
       maxChars = 20000,
+      mode = "raw",
+      maxTurns = 6,
+      maxCharsPerTurn = 6000,
+      includeRawFallback = false,
+      includeText = true,
       requestId,
     }) => {
       const startedAt = new Date().toISOString();
       try {
         const target = await resolveBoundCdpTarget({ baseUrl, tabId, useBoundTab, sessionName, strictBinding });
-        const read = await readCdpPage({ baseUrl: target.baseUrl, tabId: target.tabId, maxChars });
+        const read = await readCdpPage({
+          baseUrl: target.baseUrl,
+          tabId: target.tabId,
+          maxChars,
+          mode,
+          maxTurns,
+          maxCharsPerTurn,
+          includeRawFallback,
+          includeText,
+        });
         const result = withMeta(
           { ...read, sessionName: target.sessionName, binding: target.binding, bindingWarnings: target.bindingWarnings },
           { requestId, startedAt },

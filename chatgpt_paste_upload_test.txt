@@ -1,0 +1,2 @@
+ChatGPT paste upload test from Codex.
+This file is harmless and used only to verify file clipboard upload.

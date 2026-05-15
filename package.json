@@ -1,0 +1,34 @@
+{
+  "name": "chatgpt-chrome-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "check:smoke": "npm run check && npm run smoke:mcp",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "mcp": "node src/server.mjs",
+    "chatgpt:read": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action read",
+    "chatgpt:send": "node src/send.mjs",
+    "chatgpt:state": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action state",
+    "chatgpt:codeblocks": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action codeblocks",
+    "chatgpt:lastresponse": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action lastresponse",
+    "chatgpt:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action stop",
+    "chatgpt:downloads": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action downloads",
+    "chatgpt:download": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action download",
+    "chatgpt:attachments": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action attachments",
+    "chatgpt:upload": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action upload",
+    "chatgpt:remove-attachments": "powershell -NoProfile -ExecutionPolicy Bypass -File src/uia-chatgpt.ps1 -Action removeattachments",
+    "cdp:status": "node --input-type=module -e \"import { cdpStatus } from './src/cdp-client.mjs'; console.log(JSON.stringify(await cdpStatus(), null, 2));\"",
+    "cdp:list": "node --input-type=module -e \"import { listCdpTabs } from './src/cdp-client.mjs'; console.log(JSON.stringify(await listCdpTabs(), null, 2));\"",
+    "cdp:launch": "node --input-type=module -e \"import { launchCdpChrome } from './src/cdp-client.mjs'; console.log(JSON.stringify(await launchCdpChrome(), null, 2));\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.12"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+.chatgpt-chrome-mcp/
+.claude/
+archive/
+*.zip
+chatgpt-mcp-*.txt
+cdp-remove-test-*.txt

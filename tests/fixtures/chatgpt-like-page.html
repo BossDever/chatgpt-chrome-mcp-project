@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <section data-message-author-role="user">
+        <p>Please review the project.</p>
+      </section>
+      <section data-message-author-role="assistant">
+        <p>First reply.</p>
+      </section>
+      <section data-message-author-role="user">
+        <p>Upload this file.</p>
+      </section>
+    </main>
+
+    <form>
+      <div
+        id="prompt-textarea"
+        role="textbox"
+        aria-label="Message ChatGPT"
+        contenteditable="true"
+      ></div>
+
+      <div role="group" aria-label="cdp-remove-test.txt">
+        <button id="file-card" aria-label="cdp-remove-test.txt" type="button"></button>
+        <button id="remove-file" aria-label="ลบไฟล์ 1: cdp-remove-test.txt" type="button"></button>
+      </div>
+
+      <button data-testid="composer-submit-button" aria-label="Send prompt" type="button">
+        Send
+      </button>
+    </form>
+  </body>
+</html>

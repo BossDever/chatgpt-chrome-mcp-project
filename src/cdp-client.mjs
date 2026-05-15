@@ -884,13 +884,14 @@ export async function listCdpArtifacts({
           const src = img.currentSrc || img.src || "";
           const srcKind = src.startsWith("blob:") ? "blob" : src.startsWith("data:") ? "data" : src.startsWith("http") ? "http" : "other";
           const surroundingText = textOf(img.closest("[data-message-author-role], article, main, div")).slice(0, 240);
-          const likelyUiAsset = /openai|chatgpt|avatar|profile|gravatar|googleusercontent\\.com\\/(a\\/|ogw\\/)|favicon|sprite|logo/i.test(src) ||
-            /avatar|profile/i.test(img.alt || surroundingText);
-          const likelyGenerated = !likelyUiAsset && (
+          const generatedSrc = /\\/backend-api\\/estuary\\/content|files\\.oaiusercontent|oaidalleapiprodscus/i.test(src);
+          const likelyUiAsset = !generatedSrc && (/avatar|profile|gravatar|googleusercontent\\.com\\/(a\\/|ogw\\/)|favicon|sprite|logo/i.test(src) ||
+            /avatar|profile/i.test(img.alt || surroundingText));
+          const likelyGenerated = generatedSrc || (!likelyUiAsset && (
             srcKind === "blob" ||
             srcKind === "data" ||
             (img.naturalWidth >= 256 && img.naturalHeight >= 256)
-          );
+          ));
           return {
             index,
             type: "image",

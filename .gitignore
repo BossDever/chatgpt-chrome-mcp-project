@@ -5,3 +5,4 @@ archive/
 *.zip
 chatgpt-mcp-*.txt
 cdp-remove-test-*.txt
+generated-downloads/

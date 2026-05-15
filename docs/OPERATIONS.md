@@ -41,6 +41,19 @@ Use `chatgpt_cdp_get_state` with `strictBinding=true` before sends, uploads, or
 removes. If several agents need separate conversations, give each one a
 different `sessionName`.
 
+Bindings are local runtime state, not project source. They are stored under the
+server instance's working directory, for example:
+
+```text
+.chatgpt-chrome-mcp/bindings/default.json
+```
+
+If you clone the repository to a new path, change the Codex MCP server path, or
+start a different server instance, bind the tab again. A smoke failure such as
+`default CDP binding is required but missing` usually means the active server
+path does not have a saved binding yet; it does not mean `npm ci` or the test
+suite failed.
+
 ## Normal Agent Workflow
 
 Use the CDP tools first:
@@ -99,6 +112,10 @@ port with the lower-level CDP launch tool.
 `CDP_BINDING_NOT_FOUND` means the session has no saved tab binding. Run
 `npm run cdp:list`, pick the intended ChatGPT tab, then call
 `chatgpt_cdp_bind_tab` again.
+
+Also confirm Codex is loading the MCP server from the repository path you
+expect. Binding files are path-local runtime files, so a binding created through
+one MCP server path does not automatically appear in another clone.
 
 ### Binding is stale
 

@@ -55,6 +55,11 @@ already has pending attachments, then uploads the explicit file, verifies an
 attachment appears, removes all pending attachments created during the smoke
 run, and verifies the composer returns to zero attachments.
 
+CDP tab bindings are runtime state under `.chatgpt-chrome-mcp/bindings/` in the
+server working directory. They are intentionally ignored by git. After cloning
+the repository to a new path or changing the Codex MCP server path, bind the tab
+again before running smoke checks that require `--require-binding`.
+
 ## Architecture Snapshot
 
 - `src/server.mjs`: MCP bootstrap, dependency wiring, shared validation, and

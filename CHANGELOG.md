@@ -32,6 +32,8 @@ This is the first documented stable baseline for the local
 - Documentation snapshot in `docs/STABLE_BASELINE.md` and
   `docs/KNOWN_LIMITATIONS.md`.
 - Operations runbook in `docs/OPERATIONS.md`.
+- Operations notes explaining that CDP tab bindings are path-local runtime state
+  and must be recreated after cloning or changing the MCP server path.
 - Root cleanup policy that archives old review zips and captured review
   responses instead of deleting them.
 - `.gitignore` entries for dependencies, audit logs, archives, zips, and

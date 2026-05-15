@@ -25,6 +25,7 @@ function makeDeps() {
     removeCdpAttachments: asyncNoop,
     resolveBoundCdpTarget: asyncNoop,
     resolveMessageInput: noop,
+    saveCdpGeneratedImage: asyncNoop,
     sendCdpMessage: asyncNoop,
     sendCdpMessageAndWait: asyncNoop,
     sha256: () => "hash",
@@ -73,6 +74,7 @@ test("registerCdpTools registers the expected CDP tools", () => {
     "chatgpt_cdp_get_state",
     "chatgpt_cdp_read",
     "chatgpt_cdp_list_artifacts",
+    "chatgpt_cdp_save_generated_image",
     "chatgpt_cdp_send",
     "chatgpt_cdp_send_and_wait",
     "chatgpt_cdp_upload_file",
@@ -116,6 +118,8 @@ test("registerCdpTools preserves key CDP schema fields", () => {
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxCharsPerTurn"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("includeRawFallback"), true);
   assert.equal(schemaKeys("chatgpt_cdp_upload_file").includes("strictBinding"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_save_generated_image").includes("prefer"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_save_generated_image").includes("dryRun"), true);
   assert.equal(schemaKeys("chatgpt_cdp_remove_attachments").includes("strictBinding"), true);
   assert.equal(schemaKeys("chatgpt_cdp_remove_attachments").includes("removeAll"), true);
   assert.equal(schemaKeys("chatgpt_cdp_bind_tab").includes("sessionName"), true);

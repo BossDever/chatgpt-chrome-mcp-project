@@ -30,6 +30,7 @@ import {
   removeCdpAttachments,
   sendCdpMessage,
   sendCdpMessageAndWait,
+  saveCdpGeneratedImage,
   uploadCdpFile,
 } from "./cdp-client.mjs";
 
@@ -155,6 +156,7 @@ registerCdpTools(server, {
   resolveMessageInput,
   sendCdpMessage,
   sendCdpMessageAndWait,
+  saveCdpGeneratedImage,
   sha256,
   uploadCdpFile,
   verifyLocalUploadFile,

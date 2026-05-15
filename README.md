@@ -81,6 +81,10 @@ boundaries. See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the runbook.
 - `chatgpt_cdp_list_artifacts`: read-only CDP diagnostic for visible images,
   likely generated images, image placeholders, and download-like controls. Use
   this before deciding whether a generated image/file can be downloaded.
+- `chatgpt_cdp_save_generated_image`: saves a visible generated image from the
+  bound tab. It prefers original ChatGPT estuary image bytes, then falls back
+  to canvas PNG with explicit warnings and returns file path, MIME, dimensions,
+  SHA-256, selected candidate, and preservation metadata.
 - `chatgpt_cdp_send_and_wait`: main CDP workflow for agents. It submits a
   message, verifies that the user's own turn appeared, waits for the assistant
   reply after that user turn to stabilize, and returns turn hashes/timings.
@@ -184,8 +188,8 @@ verifies the composer is clean again:
 npm run smoke:mcp -- --require-cdp --require-binding --upload-remove-file .\chatgpt_paste_upload_test.txt
 ```
 
-The smoke script starts the MCP server over stdio, asserts the expected 27-tool
-surface, verifies 13 CDP tools and 14 UIA tools, checks `chrome_cdp_status`, and
+The smoke script starts the MCP server over stdio, asserts the expected 28-tool
+surface, verifies 14 CDP tools and 14 UIA tools, checks `chrome_cdp_status`, and
 when a default binding exists reads `chatgpt_cdp_get_state` with
 `strictBinding=true`.
 

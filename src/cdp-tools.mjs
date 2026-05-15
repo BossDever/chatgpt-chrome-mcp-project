@@ -19,6 +19,7 @@ export function registerCdpTools(server, deps) {
     removeCdpAttachments,
     resolveBoundCdpTarget,
     resolveMessageInput,
+    saveCdpGeneratedImage,
     sendCdpMessage,
     sendCdpMessageAndWait,
     sha256,
@@ -425,6 +426,91 @@ export function registerCdpTools(server, deps) {
       } catch (error) {
         const result = withMeta(
           { ok: false, errorCode: "CDP_LIST_ARTIFACTS_FAILED", error: error.message },
+          { requestId, startedAt },
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result,
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "chatgpt_cdp_save_generated_image",
+    {
+      title: "Save visible ChatGPT generated image",
+      description:
+        "Saves a visible generated image from a bound or explicit ChatGPT CDP tab. It prefers original source bytes when safe, then falls back to canvas PNG with warnings.",
+      inputSchema: {
+        baseUrl: z.string().optional(),
+        sessionName: z.string().optional(),
+        tabId: z.string().optional(),
+        useBoundTab: z.boolean().optional(),
+        strictBinding: z.boolean().optional(),
+        outputDir: z.string().optional(),
+        fileNamePrefix: z.string().optional(),
+        which: z.enum(["newest", "largest", "index"]).optional(),
+        index: z.number().int().min(0).max(200).optional(),
+        prefer: z.enum(["auto", "source", "canvas"]).optional(),
+        maxPixels: z.number().int().min(1).max(100000000).optional(),
+        waitForImageMs: z.number().int().min(1000).max(300000).optional(),
+        dryRun: z.boolean().optional(),
+        lockTimeoutMs: z.number().int().min(5000).max(600000).optional(),
+        requestId: z.string().optional(),
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({
+      baseUrl,
+      sessionName = "default",
+      tabId,
+      useBoundTab = true,
+      strictBinding = false,
+      outputDir,
+      fileNamePrefix = "chatgpt-generated-image",
+      which = "newest",
+      index = 0,
+      prefer = "auto",
+      maxPixels = 4096 * 4096,
+      waitForImageMs = 30000,
+      dryRun = false,
+      lockTimeoutMs = 120000,
+      requestId,
+    }) => {
+      const startedAt = new Date().toISOString();
+      try {
+        const target = await resolveBoundCdpTarget({ baseUrl, tabId, useBoundTab, sessionName, strictBinding });
+        const saved = await saveCdpGeneratedImage({
+          baseUrl: target.baseUrl,
+          tabId: target.tabId,
+          outputDir,
+          fileNamePrefix,
+          which,
+          index,
+          prefer,
+          maxPixels,
+          waitForImageMs,
+          dryRun,
+          lockTimeoutMs,
+        });
+        const result = withMeta(
+          { ...saved, sessionName: target.sessionName, binding: target.binding, bindingWarnings: target.bindingWarnings },
+          { requestId, startedAt },
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result,
+          isError: !saved.ok,
+        };
+      } catch (error) {
+        const result = withMeta(
+          { ok: false, errorCode: "CDP_SAVE_GENERATED_IMAGE_FAILED", error: error.message },
           { requestId, startedAt },
         );
         return {

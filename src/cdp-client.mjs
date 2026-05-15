@@ -4,6 +4,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chatGptDomAdapterScript } from "./chatgpt-dom-adapter.mjs";
+import {
+  chatGptGeneratedImageScript,
+  saveImageArtifactFromPage,
+} from "./image-artifact-saver.mjs";
 
 export { isAttachmentRemoveControlLabel } from "./chatgpt-dom-adapter.mjs";
 
@@ -954,6 +958,45 @@ export async function listCdpArtifacts({
       };
     })()`, 10000);
     return { ok: true, tab, artifacts };
+  });
+}
+
+export async function saveCdpGeneratedImage({
+  baseUrl = defaultCdpBaseUrl(),
+  tabId,
+  outputDir,
+  fileNamePrefix = "chatgpt-generated-image",
+  which = "newest",
+  index = 0,
+  prefer = "auto",
+  maxPixels = 4096 * 4096,
+  waitForImageMs = 30000,
+  dryRun = false,
+  lockTimeoutMs = 120000,
+} = {}) {
+  const normalized = normalizeBaseUrl(baseUrl);
+  const tab = await findCdpTab({ baseUrl: normalized, tabId });
+  assertChatGptTab(tab);
+  return withLockedCdpTab({ baseUrl: normalized, tab, lockTimeoutMs }, async (session) => {
+    const saved = await saveImageArtifactFromPage({
+      evaluateCdp,
+      session,
+      outputDir,
+      fileNamePrefix,
+      dryRun,
+      timeoutMs: Math.max(waitForImageMs + 15000, 60000),
+      script: chatGptGeneratedImageScript({
+        which,
+        index,
+        prefer,
+        maxPixels,
+        waitForImageMs,
+      }),
+    });
+    return {
+      ...saved,
+      tab,
+    };
   });
 }
 

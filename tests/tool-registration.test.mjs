@@ -67,6 +67,7 @@ test("registerCdpTools registers the expected CDP tools", () => {
   assert.deepEqual([...registered.keys()], [
     "chrome_cdp_status",
     "chrome_cdp_launch",
+    "chatgpt_cdp_prepare_session",
     "chrome_cdp_list_tabs",
     "chrome_cdp_open_tab",
     "chatgpt_cdp_bind_tab",
@@ -116,6 +117,9 @@ test("registerCdpTools preserves key CDP schema fields", () => {
   assert.equal(schemaKeys("chrome_cdp_launch").includes("waitForReadyMs"), true);
   assert.equal(schemaKeys("chrome_cdp_launch").includes("pollMs"), true);
   assert.equal(schemaKeys("chrome_cdp_launch").includes("bindSessionName"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_prepare_session").includes("launchIfUnavailable"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_prepare_session").includes("openIfNoTab"), true);
+  assert.equal(schemaKeys("chatgpt_cdp_prepare_session").includes("waitForReadyMs"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("mode"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxTurns"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxCharsPerTurn"), true);

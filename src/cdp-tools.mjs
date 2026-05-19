@@ -29,6 +29,228 @@ export function registerCdpTools(server, deps) {
     writeBoundCdpTarget,
   } = deps;
 
+  async function inspectCandidateTab({ baseUrl, tab, maxChars = 1000 }) {
+    try {
+      const state = await getCdpState({ baseUrl, tabId: tab.id, maxChars });
+      return {
+        tab,
+        ok: Boolean(state?.ok),
+        ready: Boolean(state?.state?.hasPrompt),
+        loginLikelyRequired: !state?.state?.hasPrompt,
+        state: {
+          hasPrompt: Boolean(state?.state?.hasPrompt),
+          isGenerating: Boolean(state?.state?.isGenerating),
+          attachmentCount: state?.state?.attachmentCount ?? 0,
+        },
+      };
+    } catch (error) {
+      return {
+        tab,
+        ok: false,
+        ready: false,
+        loginLikelyRequired: true,
+        errorCode: "CHATGPT_TAB_INSPECTION_FAILED",
+        error: error.message,
+      };
+    }
+  }
+
+  async function bindPreparedTab({ baseUrl, sessionName, tab }) {
+    const normalizedSessionName = normalizeSessionName(sessionName);
+    const bound = {
+      sessionName: normalizedSessionName,
+      baseUrl,
+      tabId: tab.id,
+      title: tab.title,
+      url: tab.url,
+      boundAt: new Date().toISOString(),
+    };
+    await writeBoundCdpTarget(normalizedSessionName, bound);
+    return bound;
+  }
+
+  async function prepareChatGptSession({
+    baseUrl = defaultCdpBaseUrl(),
+    sessionName = "default",
+    launchIfUnavailable = true,
+    openIfNoTab = true,
+    port = 9222,
+    userDataDir = defaultChromeUserDataDir(),
+    chromePath,
+    waitForReadyMs = 0,
+    pollMs = 1000,
+  } = {}) {
+    const normalizedSessionName = normalizeSessionName(sessionName);
+    let status = await cdpStatus({ baseUrl });
+
+    if (!status.ok) {
+      if (!launchIfUnavailable) {
+        return {
+          ok: false,
+          ready: false,
+          state: "cdp_unavailable",
+          errorCode: "CDP_UNAVAILABLE",
+          baseUrl,
+          sessionName: normalizedSessionName,
+          status,
+          nextStep: "Launch the dedicated Chrome CDP profile, then run chatgpt_cdp_prepare_session again.",
+        };
+      }
+
+      const launched = await launchCdpChrome({
+        port,
+        userDataDir,
+        chromePath,
+        url: "https://chatgpt.com/",
+        waitForReadyMs,
+        pollMs,
+      });
+      const launchedBaseUrl = launched.baseUrl ?? `http://127.0.0.1:${port}`;
+      if (launched.ready?.ready && launched.ready?.tab) {
+        const bound = await bindPreparedTab({
+          baseUrl: launchedBaseUrl,
+          sessionName: normalizedSessionName,
+          tab: launched.ready.tab,
+        });
+        return {
+          ok: true,
+          ready: true,
+          state: "ready",
+          baseUrl: launchedBaseUrl,
+          sessionName: normalizedSessionName,
+          bound,
+          launched,
+          nextStep: "ready",
+        };
+      }
+      return {
+        ok: true,
+        ready: false,
+        state: "login_required",
+        actionRequired: "USER_LOGIN",
+        errorCode: "CHROME_LAUNCHED_LOGIN_REQUIRED",
+        baseUrl: launchedBaseUrl,
+        sessionName: normalizedSessionName,
+        launched,
+        nextStep: "Sign in to ChatGPT in the Chrome window that opened, then run chatgpt_cdp_prepare_session again.",
+      };
+    }
+
+    let binding = null;
+    let bindingWarnings = [];
+    try {
+      const target = await resolveBoundCdpTarget({
+        baseUrl,
+        sessionName: normalizedSessionName,
+        useBoundTab: true,
+        strictBinding: false,
+      });
+      binding = target.binding;
+      bindingWarnings = target.bindingWarnings ?? [];
+      const blockingWarnings = bindingWarnings.filter((warning) =>
+        ["CDP_BINDING_BASE_URL_OVERRIDDEN", "CDP_BINDING_TAB_ID_MISSING", "CDP_BOUND_TAB_NOT_FOUND", "CDP_BOUND_TAB_NOT_CHATGPT"].includes(warning?.code),
+      );
+      if (binding && blockingWarnings.length === 0) {
+        const state = await getCdpState({ baseUrl: target.baseUrl, tabId: target.tabId, maxChars: 1000 });
+        if (state?.state?.hasPrompt) {
+          return {
+            ok: true,
+            ready: true,
+            state: "ready",
+            baseUrl: target.baseUrl,
+            sessionName: normalizedSessionName,
+            bound: binding,
+            bindingWarnings,
+            tab: state.tab,
+            nextStep: "ready",
+          };
+        }
+      }
+    } catch {
+      binding = null;
+      bindingWarnings = [];
+    }
+
+    const tabs = await listCdpTabs({ baseUrl });
+    let candidates = tabs.filter((tab) => isChatGptUrl(tab.url));
+
+    if (candidates.length === 0 && openIfNoTab) {
+      const tab = await openCdpTab({ baseUrl, url: "https://chatgpt.com/" });
+      candidates = [tab];
+    }
+
+    if (candidates.length === 0) {
+      return {
+        ok: true,
+        ready: false,
+        state: "no_tab",
+        errorCode: "NO_CHATGPT_TAB",
+        baseUrl,
+        sessionName: normalizedSessionName,
+        status,
+        nextStep: "Open https://chatgpt.com/ in the dedicated Chrome profile, sign in if needed, then run chatgpt_cdp_prepare_session again.",
+      };
+    }
+
+    const inspected = await Promise.all(candidates.map((tab) => inspectCandidateTab({ baseUrl, tab })));
+    const readyCandidates = inspected.filter((candidate) => candidate.ready);
+
+    if (readyCandidates.length === 1) {
+      const bound = await bindPreparedTab({
+        baseUrl,
+        sessionName: normalizedSessionName,
+        tab: readyCandidates[0].tab,
+      });
+      return {
+        ok: true,
+        ready: true,
+        state: "ready",
+        baseUrl,
+        sessionName: normalizedSessionName,
+        bound,
+        tab: readyCandidates[0].tab,
+        bindingWarnings,
+        nextStep: "ready",
+      };
+    }
+
+    if (readyCandidates.length > 1) {
+      return {
+        ok: true,
+        ready: false,
+        state: "ambiguous_tab",
+        errorCode: "AMBIGUOUS_CHATGPT_TAB",
+        baseUrl,
+        sessionName: normalizedSessionName,
+        candidates: readyCandidates.map(({ tab }) => ({
+          tabId: tab.id,
+          title: tab.title,
+          url: tab.url,
+        })),
+        nextStep: "Bind the intended ChatGPT tab by tabId, or close extra ChatGPT tabs and run chatgpt_cdp_prepare_session again.",
+      };
+    }
+
+    return {
+      ok: true,
+      ready: false,
+      state: "login_required",
+      actionRequired: "USER_LOGIN",
+      errorCode: "CHATGPT_LOGIN_REQUIRED",
+      baseUrl,
+      sessionName: normalizedSessionName,
+      candidates: inspected.map(({ tab, errorCode, error, state }) => ({
+        tabId: tab.id,
+        title: tab.title,
+        url: tab.url,
+        errorCode,
+        error,
+        state,
+      })),
+      nextStep: "Sign in to ChatGPT in the dedicated Chrome window, then run chatgpt_cdp_prepare_session again.",
+    };
+  }
+
   server.registerTool(
     "chrome_cdp_status",
     {
@@ -51,7 +273,7 @@ export function registerCdpTools(server, deps) {
       };
     },
   );
-  
+
   server.registerTool(
     "chrome_cdp_launch",
     {
@@ -117,7 +339,82 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
+  server.registerTool(
+    "chatgpt_cdp_prepare_session",
+    {
+      title: "Prepare ChatGPT CDP session",
+      description:
+        "Guided first-run workflow for ChatGPT CDP: checks/launches Chrome, detects login requirements, binds a ready tab, and returns the next user/agent step.",
+      inputSchema: {
+        baseUrl: z.string().optional(),
+        sessionName: z.string().optional(),
+        launchIfUnavailable: z.boolean().optional(),
+        openIfNoTab: z.boolean().optional(),
+        port: z.number().int().min(1024).max(65535).optional(),
+        userDataDir: z.string().optional(),
+        chromePath: z.string().optional(),
+        waitForReadyMs: z.number().int().min(0).max(900000).optional(),
+        pollMs: z.number().int().min(250).max(10000).optional(),
+        requestId: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({
+      baseUrl = defaultCdpBaseUrl(),
+      sessionName = "default",
+      launchIfUnavailable = true,
+      openIfNoTab = true,
+      port = 9222,
+      userDataDir = defaultChromeUserDataDir(),
+      chromePath,
+      waitForReadyMs = 0,
+      pollMs = 1000,
+      requestId,
+    }) => {
+      const startedAt = new Date().toISOString();
+      try {
+        const prepared = await prepareChatGptSession({
+          baseUrl,
+          sessionName,
+          launchIfUnavailable,
+          openIfNoTab,
+          port,
+          userDataDir,
+          chromePath,
+          waitForReadyMs,
+          pollMs,
+        });
+        const result = withMeta(prepared, { requestId, startedAt });
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result,
+          isError: !result.ok,
+        };
+      } catch (error) {
+        const result = withMeta(
+          {
+            ok: false,
+            ready: false,
+            state: "failed",
+            errorCode: "CHATGPT_PREPARE_SESSION_FAILED",
+            error: error.message,
+            nextStep: "Check Chrome CDP status and rerun chatgpt_cdp_prepare_session.",
+          },
+          { requestId, startedAt },
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result,
+          isError: true,
+        };
+      }
+    },
+  );
+
   server.registerTool(
     "chrome_cdp_list_tabs",
     {
@@ -150,7 +447,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chrome_cdp_open_tab",
     {
@@ -184,7 +481,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_bind_tab",
     {
@@ -242,7 +539,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_get_bound_tab",
     {
@@ -267,7 +564,7 @@ export function registerCdpTools(server, deps) {
       };
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_get_state",
     {
@@ -326,7 +623,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_read",
     {
@@ -641,7 +938,7 @@ export function registerCdpTools(server, deps) {
             structuredContent: result,
           };
         }
-  
+
         const sent = await sendCdpMessage({
           baseUrl: target.baseUrl,
           tabId: target.tabId,
@@ -678,7 +975,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_send_and_wait",
     {
@@ -773,7 +1070,7 @@ export function registerCdpTools(server, deps) {
             structuredContent: result,
           };
         }
-  
+
         const result = await sendCdpMessageAndWait({
           baseUrl: target.baseUrl,
           tabId: target.tabId,
@@ -813,7 +1110,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_upload_file",
     {
@@ -911,7 +1208,7 @@ export function registerCdpTools(server, deps) {
             structuredContent: result,
           };
         }
-  
+
         const upload = await uploadCdpFile({
           baseUrl: target.baseUrl,
           tabId: target.tabId,
@@ -944,7 +1241,7 @@ export function registerCdpTools(server, deps) {
       }
     },
   );
-  
+
   server.registerTool(
     "chatgpt_cdp_remove_attachments",
     {
@@ -1009,7 +1306,7 @@ export function registerCdpTools(server, deps) {
             isError: true,
           };
         }
-  
+
         const target = await resolveBoundCdpTarget({ baseUrl, tabId, useBoundTab, sessionName, strictBinding });
         Object.assign(auditContext, {
           sessionName: target.sessionName,

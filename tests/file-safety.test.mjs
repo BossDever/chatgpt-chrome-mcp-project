@@ -64,6 +64,7 @@ test("verifyLocalUploadFile enforces maxBytes", async () => {
 
     assert.equal(result.withinMaxBytes, false);
     assert.equal(result.safeForUpload, false);
+    assert.equal(result.sha256, null);
   });
 });
 

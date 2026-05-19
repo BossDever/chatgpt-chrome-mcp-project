@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -25,13 +26,16 @@ export function defaultChromeUserDataDir() {
 export function defaultChromePath() {
   if (process.platform !== "win32") return "google-chrome";
 
+  const configured = process.env.CHATGPT_CHROME_PATH || process.env.CHROME_PATH;
+  if (configured) return configured;
+
   const candidates = [
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
     path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
   ];
 
-  return candidates[0];
+  return candidates.find((candidate) => existsSync(candidate)) ?? "chrome.exe";
 }
 
 export function sleep(ms) {
@@ -160,6 +164,8 @@ export async function launchCdpChrome({
   chromePath = defaultChromePath(),
   url = "https://chatgpt.com/",
   waitMs = 2500,
+  waitForReadyMs = 0,
+  pollMs = 1000,
 } = {}) {
   await mkdir(userDataDir, { recursive: true });
 
@@ -181,17 +187,111 @@ export async function launchCdpChrome({
   child.unref();
 
   await sleep(waitMs);
-  const status = await cdpStatus({ baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 5000 });
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const status = await cdpStatus({ baseUrl, timeoutMs: 5000 });
+  const ready = status.ok
+    ? await waitForChatGptReady({ baseUrl, waitForReadyMs, pollMs })
+    : { ok: false, ready: false, errorCode: "CDP_NOT_AVAILABLE", elapsedMs: 0 };
   return {
     ok: status.ok,
     launchedProcessId: child.pid ?? null,
     chromePath,
     userDataDir,
     port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl,
     initialUrl: url,
     status,
+    ready,
+    actionRequired: ready.ready
+      ? null
+      : "Log in to ChatGPT in the Chrome window that opened, then report back so the tab can be checked and bound.",
   };
+}
+
+export async function waitForChatGptReady({
+  baseUrl = defaultCdpBaseUrl(),
+  waitForReadyMs = 300000,
+  pollMs = 1000,
+} = {}) {
+  const started = Date.now();
+  const deadline = started + Math.max(0, waitForReadyMs);
+  let last = null;
+
+  do {
+    try {
+      const tabs = await listCdpTabs({ baseUrl });
+      const candidates = tabs.filter((tab) => {
+        try {
+          const parsed = new URL(tab.url);
+          return parsed.hostname === "chatgpt.com" || parsed.hostname.endsWith(".chatgpt.com");
+        } catch {
+          return false;
+        }
+      });
+      for (const tab of candidates) {
+        const readiness = await inspectChatGptReadiness(tab).catch((error) => ({
+          ok: false,
+          ready: false,
+          errorCode: "CHATGPT_READY_INSPECTION_FAILED",
+          error: error.message,
+          tab,
+        }));
+        last = readiness;
+        if (readiness.ready) {
+          return { ...readiness, elapsedMs: Date.now() - started, timedOut: false };
+        }
+      }
+      if (!last) {
+        last = {
+          ok: false,
+          ready: false,
+          errorCode: "CHATGPT_TAB_NOT_FOUND",
+          loginLikelyRequired: true,
+          tabCount: tabs.length,
+        };
+      }
+    } catch (error) {
+      last = { ok: false, ready: false, errorCode: "CHATGPT_READY_CHECK_FAILED", error: error.message };
+    }
+
+    if (Date.now() >= deadline) break;
+    await sleep(Math.min(Math.max(250, pollMs), Math.max(250, deadline - Date.now())));
+  } while (Date.now() <= deadline);
+
+  return {
+    ...(last ?? { ok: false, ready: false, errorCode: "CHATGPT_READY_TIMEOUT" }),
+    ready: false,
+    timedOut: waitForReadyMs > 0,
+    elapsedMs: Date.now() - started,
+  };
+}
+
+async function inspectChatGptReadiness(tab) {
+  return withCdpTab(tab, async (session) => {
+    const state = await evaluateCdp(session, `(() => {
+      const prompt = document.querySelector("#prompt-textarea");
+      const text = (document.body?.innerText || "").replace(/\\s+/g, " ").slice(0, 1000);
+      const loginLikelyRequired = /log in|sign up|continue with|เข้าสู่ระบบ|ลงชื่อเข้าใช้/i.test(text);
+      return {
+        url: location.href,
+        title: document.title,
+        hasPrompt: Boolean(prompt),
+        loginLikelyRequired,
+      };
+    })()`);
+    return {
+      ok: true,
+      ready: Boolean(state?.hasPrompt),
+      errorCode: state?.hasPrompt ? undefined : "CHATGPT_LOGIN_OR_APP_NOT_READY",
+      loginLikelyRequired: !state?.hasPrompt && Boolean(state?.loginLikelyRequired),
+      tab: {
+        ...tab,
+        title: state?.title ?? tab.title,
+        url: state?.url ?? tab.url,
+      },
+      state,
+    };
+  });
 }
 
 export async function listCdpTabs({
@@ -1163,7 +1263,7 @@ export async function sendCdpMessageAndWait({
       }
 
       const wait = await waitForAssistantReplyStable(session, tab, {
-        baselineState: sent.stateAfterSubmit ?? sent.stateBeforeSend,
+        baselineState: sent.stateBeforeSend,
         timeoutMs,
         pollMs,
         stableMs,

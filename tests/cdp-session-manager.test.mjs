@@ -8,6 +8,7 @@ import {
   cdpBindingPath,
   getCdpBindingWarnings,
   isChatGptUrl,
+  isStrictBlockingBindingWarning,
   normalizeSessionName,
   readBoundCdpTarget,
   resolveBoundCdpTarget,
@@ -122,7 +123,7 @@ test("binding warnings report non-ChatGPT bound tabs", async () => {
   );
 });
 
-test("resolveBoundCdpTarget supports warnings and strict failures", async () => {
+test("strict binding allows ChatGPT conversation URL and title drift", async () => {
   const bindingsDir = await mkdtemp(path.join(os.tmpdir(), "chatgpt-bindings-"));
   try {
     await writeBoundCdpTarget(
@@ -152,18 +153,36 @@ test("resolveBoundCdpTarget supports warnings and strict failures", async () => 
       ["CDP_BINDING_URL_CHANGED", "CDP_BINDING_TITLE_CHANGED"],
     );
 
+    const strict = await resolveBoundCdpTarget({
+      sessionName: "stale",
+      strictBinding: true,
+      bindingsDir,
+      findTab: async () => ({
+        id: "tab-1",
+        title: "New title",
+        url: "https://chatgpt.com/c/new",
+      }),
+    });
+    assert.equal(strict.tabId, "tab-1");
+  } finally {
+    await rm(bindingsDir, { recursive: true, force: true });
+  }
+});
+
+test("strict binding still blocks missing or non-ChatGPT targets", async () => {
+  assert.equal(isStrictBlockingBindingWarning({ code: "CDP_BINDING_URL_CHANGED" }), false);
+  assert.equal(isStrictBlockingBindingWarning({ code: "CDP_BOUND_TAB_NOT_CHATGPT" }), true);
+
+  const bindingsDir = await mkdtemp(path.join(os.tmpdir(), "chatgpt-bindings-"));
+  try {
+    await writeBoundCdpTarget("bad", { sessionName: "bad", tabId: "tab-1", url: "https://chatgpt.com/" }, { bindingsDir });
     await assert.rejects(
-      () =>
-        resolveBoundCdpTarget({
-          sessionName: "stale",
-          strictBinding: true,
-          bindingsDir,
-          findTab: async () => ({
-            id: "tab-1",
-            title: "New title",
-            url: "https://chatgpt.com/c/new",
-          }),
-        }),
+      () => resolveBoundCdpTarget({
+        sessionName: "bad",
+        strictBinding: true,
+        bindingsDir,
+        findTab: async () => ({ id: "tab-1", title: "Example", url: "https://example.com/" }),
+      }),
       /CDP_BINDING_STALE/,
     );
   } finally {

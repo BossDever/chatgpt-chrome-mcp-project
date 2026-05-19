@@ -24,8 +24,8 @@ UI Automation path remains available as a visible-Chrome fallback.
 
 ## Stable Tool Surface
 
-- Total MCP tools: 27
-- CDP tools: 13
+- Total MCP tools: 28
+- CDP tools: 14
 - UIA/visible-Chrome tools: 14
 
 The regression smoke script asserts these counts so schema or registration
@@ -61,6 +61,17 @@ CDP tab bindings are runtime state under `.chatgpt-chrome-mcp/bindings/` in the
 server working directory. They are intentionally ignored by git. After cloning
 the repository to a new path or changing the Codex MCP server path, bind the tab
 again before running smoke checks that require `--require-binding`.
+
+Latest local verification on 2026-05-16:
+
+```powershell
+npm run check
+npm run smoke:mcp
+npm run smoke:mcp -- --require-cdp --require-binding
+```
+
+All three passed against the workspace CDP Chrome profile on
+`127.0.0.1:9222`.
 
 ## Architecture Snapshot
 

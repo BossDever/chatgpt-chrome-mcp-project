@@ -34,7 +34,9 @@ depends on browser and page behavior that can change.
 
 - UIA download helpers can click visible ChatGPT download buttons and annotate
   created files.
-- CDP-native download/artifact handling is not implemented yet.
+- CDP can list visible artifacts and save visible generated images, but it does
+  not yet have a generic download-click tool equivalent to the UIA download
+  helper.
 - Code block extraction is currently stronger in the UIA path than the CDP path.
 
 ## Reliability Boundaries

@@ -17,8 +17,13 @@ If it is not available, launch the dedicated profile:
 npm run cdp:launch
 ```
 
-Log in to ChatGPT in that Chrome profile once. Keep the CDP port bound to
-`127.0.0.1`; do not expose it to a network interface.
+The launch helper returns after opening Chrome and reports whether the ChatGPT
+prompt is already ready. If the profile is new, log in inside the Chrome window
+that opens, then tell the agent you are done so it can bind/check the tab. MCP
+callers can pass `bindSessionName: "default"` to bind automatically only when
+the prompt is already visible. Set `waitForReadyMs` explicitly when a blocking
+wait is desired. Keep the CDP port bound to `127.0.0.1`; do not expose it to a
+network interface.
 
 ## Bind A ChatGPT Tab
 
@@ -90,8 +95,9 @@ CDP write tools append metadata-only audit records under:
 ```
 
 Audit entries include hashes and metadata such as tool name, request ID,
-session name, tab ID, duration, result code, file hash, and binding warnings.
-They do not store raw prompts, full URLs, or full local file paths.
+session name, tab ID, duration, result code, file hash, generated-image save
+method/dimensions, and binding warnings. They do not store raw prompts, full
+URLs, or full local file paths.
 
 ## Troubleshooting
 

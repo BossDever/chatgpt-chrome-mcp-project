@@ -113,6 +113,9 @@ test("registerCdpTools preserves key CDP schema fields", () => {
     true,
   );
   assert.equal(schemaKeys("chatgpt_cdp_send").includes("strictBinding"), true);
+  assert.equal(schemaKeys("chrome_cdp_launch").includes("waitForReadyMs"), true);
+  assert.equal(schemaKeys("chrome_cdp_launch").includes("pollMs"), true);
+  assert.equal(schemaKeys("chrome_cdp_launch").includes("bindSessionName"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("mode"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxTurns"), true);
   assert.equal(schemaKeys("chatgpt_cdp_read").includes("maxCharsPerTurn"), true);

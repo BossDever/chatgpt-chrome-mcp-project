@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 const blockedExtensions = new Set([
@@ -48,8 +49,14 @@ function normalizeAllowedExtensions(extensions) {
 }
 
 export async function sha256File(filePath) {
-  const bytes = await readFile(filePath);
-  return createHash("sha256").update(bytes).digest("hex");
+  const hash = createHash("sha256");
+  await new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", resolve);
+  });
+  return hash.digest("hex");
 }
 
 export async function verifyDownloadedFiles(downloadResult, options = {}) {
@@ -109,10 +116,10 @@ export async function verifyLocalUploadFile(filePath, options = {}) {
   const maxBytes = options.maxBytes ?? 50 * 1024 * 1024;
   const name = path.basename(fullName);
   const extension = path.extname(name).toLowerCase();
-  const hash = await sha256File(fullName);
   const allowedExtension = allowedExtensions.includes(extension);
   const blockedExtension = blockedExtensions.has(extension);
   const withinMaxBytes = info.size <= maxBytes;
+  const hash = withinMaxBytes ? await sha256File(fullName) : null;
 
   return {
     name,

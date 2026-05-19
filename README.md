@@ -62,8 +62,10 @@ boundaries. See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the runbook.
 - `chrome_cdp_status`: check whether a Chrome DevTools Protocol instance is
   available.
 - `chrome_cdp_launch`: launch a dedicated Chrome profile with remote debugging
-  on `127.0.0.1`. Log in to ChatGPT once in this profile before using it for
-  real ChatGPT work.
+  on `127.0.0.1`. If the new profile is not logged in, the result tells the
+  user to log in and report back. Pass `waitForReadyMs` only when you explicitly
+  want the tool call to wait for readiness, and `bindSessionName` to bind a
+  ready tab automatically.
 - `chrome_cdp_list_tabs` / `chrome_cdp_open_tab`: list or open CDP tabs with
   stable `tabId` values.
 - `chatgpt_cdp_bind_tab`: bind one ChatGPT tab by `tabId`, title, or URL so
@@ -261,7 +263,11 @@ prefer the CDP workflow:
    npm run cdp:launch
    ```
 
-2. Log in to ChatGPT in that Chrome profile once.
+   If login is needed, finish it in the Chrome window and then tell the agent
+   you are done. MCP callers can pass `{ "bindSessionName": "default" }` to
+   `chrome_cdp_launch`; it binds automatically only when the prompt is already
+   visible. Add `waitForReadyMs` only when a blocking wait is desired.
+2. Log in to ChatGPT in that Chrome profile if prompted, then run state/bind.
 3. List tabs and bind the intended ChatGPT tab to a named session:
 
    ```powershell
@@ -345,13 +351,14 @@ Audited tools:
 - `chatgpt_cdp_send_and_wait`
 - `chatgpt_cdp_upload_file`
 - `chatgpt_cdp_remove_attachments`
+- `chatgpt_cdp_save_generated_image`
 
 Audit entries include metadata such as tool name, requestId, sessionName,
 tabId, ok/errorCode, duration, message hash, file SHA-256, file extension/size,
-hashed base URL, hashed tab URL, hashed attachment filter, and binding warning
-codes. They do not store raw prompts, full file paths, raw URLs, or full
-attachment filter text. Audit write failures are ignored so they cannot make a
-tool call fail.
+generated-image save method/dimensions, hashed base URL, hashed tab URL, hashed
+attachment filter, and binding warning codes. They do not store raw prompts,
+full file paths, raw URLs, or full attachment filter text. Audit write failures
+are ignored so they cannot make a tool call fail.
 
 ## Internal Layout
 
@@ -377,11 +384,17 @@ tool call fail.
 ## Add To Codex
 
 ```powershell
-codex mcp add chatgpt-chrome -- node C:\Users\suwit\Desktop\Test\src\server.mjs
+codex mcp add chatgpt-chrome -- node C:\Users\suwit\Desktop\MCP\chatgpt-chrome-mcp-project\src\server.mjs
 codex mcp list
 ```
 
 Restart Codex after adding the MCP server so the new tools are loaded.
+
+From the workspace root, you can also register both provider MCP servers with:
+
+```powershell
+.\scripts\register-codex-mcp.ps1
+```
 
 ## Auto Reply Note
 

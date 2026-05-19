@@ -83,8 +83,9 @@ export async function resolveBoundCdpTarget({
     baseUrlOverridden: Boolean(baseUrl && binding?.baseUrl && baseUrl !== binding.baseUrl),
     findTab,
   });
-  if (strictBinding && bindingWarnings.length > 0) {
-    const codes = bindingWarnings.map((warning) => warning.code).join(",");
+  const blockingWarnings = bindingWarnings.filter(isStrictBlockingBindingWarning);
+  if (strictBinding && blockingWarnings.length > 0) {
+    const codes = blockingWarnings.map((warning) => warning.code).join(",");
     throw new Error(`CDP_BINDING_STALE: ${normalizedSessionName}: ${codes}`);
   }
 
@@ -95,6 +96,15 @@ export async function resolveBoundCdpTarget({
     binding,
     bindingWarnings,
   };
+}
+
+export function isStrictBlockingBindingWarning(warning) {
+  return [
+    "CDP_BINDING_BASE_URL_OVERRIDDEN",
+    "CDP_BINDING_TAB_ID_MISSING",
+    "CDP_BOUND_TAB_NOT_FOUND",
+    "CDP_BOUND_TAB_NOT_CHATGPT",
+  ].includes(warning?.code);
 }
 
 export async function getCdpBindingWarnings({

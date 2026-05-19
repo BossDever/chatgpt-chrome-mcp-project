@@ -63,6 +63,9 @@ export function registerCdpTools(server, deps) {
         userDataDir: z.string().optional(),
         chromePath: z.string().optional(),
         url: z.string().optional(),
+        waitForReadyMs: z.number().int().min(0).max(900000).optional(),
+        pollMs: z.number().int().min(250).max(10000).optional(),
+        bindSessionName: z.string().optional(),
         requestId: z.string().optional(),
       },
     },
@@ -71,12 +74,31 @@ export function registerCdpTools(server, deps) {
       userDataDir = defaultChromeUserDataDir(),
       chromePath,
       url = "https://chatgpt.com/",
+      waitForReadyMs = 0,
+      pollMs = 1000,
+      bindSessionName,
       requestId,
     }) => {
       const startedAt = new Date().toISOString();
       try {
-        const result = await launchCdpChrome({ port, userDataDir, chromePath, url });
-        const withTiming = withMeta(result, { requestId, startedAt });
+        const result = await launchCdpChrome({ port, userDataDir, chromePath, url, waitForReadyMs, pollMs });
+        let bound = null;
+        if (bindSessionName && result.ready?.ready && result.ready?.tab?.id) {
+          const normalizedSessionName = normalizeSessionName(bindSessionName);
+          bound = {
+            sessionName: normalizedSessionName,
+            baseUrl: result.baseUrl,
+            tabId: result.ready.tab.id,
+            title: result.ready.tab.title,
+            url: result.ready.tab.url,
+            boundAt: new Date().toISOString(),
+          };
+          await writeBoundCdpTarget(normalizedSessionName, bound);
+        }
+        const nextStep = result.ready?.ready
+          ? (bound ? `Ready and bound to session '${bound.sessionName}'.` : "Ready. Bind the ChatGPT tab before using CDP tools.")
+          : "Log in to ChatGPT in the opened Chrome window, then tell the agent you are done so it can bind/check the tab.";
+        const withTiming = withMeta({ ...result, bound, nextStep }, { requestId, startedAt });
         return {
           content: [{ type: "text", text: JSON.stringify(withTiming, null, 2) }],
           structuredContent: withTiming,
@@ -484,8 +506,16 @@ export function registerCdpTools(server, deps) {
       requestId,
     }) => {
       const startedAt = new Date().toISOString();
+      const auditContext = { sessionName, baseUrl, tabId };
       try {
         const target = await resolveBoundCdpTarget({ baseUrl, tabId, useBoundTab, sessionName, strictBinding });
+        Object.assign(auditContext, {
+          sessionName: target.sessionName,
+          baseUrl: target.baseUrl,
+          tabId: target.tabId,
+          binding: target.binding,
+          bindingWarnings: target.bindingWarnings,
+        });
         const saved = await saveCdpGeneratedImage({
           baseUrl: target.baseUrl,
           tabId: target.tabId,
@@ -503,6 +533,7 @@ export function registerCdpTools(server, deps) {
           { ...saved, sessionName: target.sessionName, binding: target.binding, bindingWarnings: target.bindingWarnings },
           { requestId, startedAt },
         );
+        await auditCdpWrite("chatgpt_cdp_save_generated_image", result, auditContext);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           structuredContent: result,
@@ -513,6 +544,7 @@ export function registerCdpTools(server, deps) {
           { ok: false, errorCode: "CDP_SAVE_GENERATED_IMAGE_FAILED", error: error.message },
           { requestId, startedAt },
         );
+        await auditCdpWrite("chatgpt_cdp_save_generated_image", result, auditContext);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           structuredContent: result,

@@ -3,11 +3,30 @@ import test from "node:test";
 
 import {
   buildDuplicateFilenamePattern,
+  defaultChromePath,
   getOwnUserTurnVerification,
   isAttachmentRemoveControlLabel,
   normalizeForTurnMatch,
   summarizeRemoveAttachmentResult,
 } from "../src/cdp-client.mjs";
+
+test("defaultChromePath honors explicit environment override", () => {
+  const previousChatGpt = process.env.CHATGPT_CHROME_PATH;
+  const previousChrome = process.env.CHROME_PATH;
+  try {
+    process.env.CHATGPT_CHROME_PATH = "C:\\Custom\\chrome.exe";
+    delete process.env.CHROME_PATH;
+    assert.equal(
+      defaultChromePath(),
+      process.platform === "win32" ? "C:\\Custom\\chrome.exe" : "google-chrome",
+    );
+  } finally {
+    if (previousChatGpt === undefined) delete process.env.CHATGPT_CHROME_PATH;
+    else process.env.CHATGPT_CHROME_PATH = previousChatGpt;
+    if (previousChrome === undefined) delete process.env.CHROME_PATH;
+    else process.env.CHROME_PATH = previousChrome;
+  }
+});
 
 test("attachment remove labels require a command prefix", () => {
   assert.equal(isAttachmentRemoveControlLabel("Remove cdp-remove-test.txt"), true);

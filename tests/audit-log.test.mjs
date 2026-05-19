@@ -56,3 +56,17 @@ test("audit records hash attachment filters and preserve safe file metadata", ()
   assert.deepEqual(record.bindingWarningCodes, ["CDP_BINDING_URL_CHANGED"]);
   assert.equal(JSON.stringify(record).includes("private-report.zip"), false);
 });
+
+test("audit records preserve generated image save metadata", () => {
+  const record = buildAuditRecord({
+    tool: "chatgpt_cdp_save_generated_image",
+    ok: true,
+    savedMethod: "canvas",
+    imageWidth: 1024,
+    imageHeight: 768,
+  });
+
+  assert.equal(record.savedMethod, "canvas");
+  assert.equal(record.imageWidth, 1024);
+  assert.equal(record.imageHeight, 768);
+});

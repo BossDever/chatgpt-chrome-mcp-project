@@ -132,6 +132,75 @@ test("registerCdpTools preserves key CDP schema fields", () => {
   assert.equal(schemaKeys("chatgpt_cdp_bind_tab").includes("sessionName"), true);
 });
 
+test("chatgpt_cdp_prepare_session reports CDP unavailable without launching when disabled", async () => {
+  const registered = new Map();
+  registerCdpTools(
+    {
+      registerTool(name, definition, handler) {
+        registered.set(name, { definition, handler });
+      },
+    },
+    {
+      ...makeDeps(),
+      cdpStatus: async ({ baseUrl }) => ({ ok: false, baseUrl, errorCode: "CDP_NOT_AVAILABLE" }),
+    },
+  );
+
+  const response = await registered.get("chatgpt_cdp_prepare_session").handler({
+    baseUrl: "http://127.0.0.1:9444",
+    launchIfUnavailable: false,
+  });
+
+  assert.equal(response.structuredContent.ok, false);
+  assert.equal(response.structuredContent.ready, false);
+  assert.equal(response.structuredContent.errorCode, "CDP_UNAVAILABLE");
+  assert.match(response.structuredContent.nextStep, /Launch/);
+});
+
+test("chatgpt_cdp_prepare_session auto-binds a single ready ChatGPT tab", async () => {
+  const registered = new Map();
+  let writtenBinding = null;
+  const tab = {
+    id: "tab-1",
+    tabId: "tab-1",
+    title: "ChatGPT",
+    url: "https://chatgpt.com/",
+    webSocketDebuggerUrl: "ws://example",
+  };
+
+  registerCdpTools(
+    {
+      registerTool(name, definition, handler) {
+        registered.set(name, { definition, handler });
+      },
+    },
+    {
+      ...makeDeps(),
+      cdpStatus: async ({ baseUrl }) => ({ ok: true, baseUrl }),
+      resolveBoundCdpTarget: async () => {
+        throw new Error("CDP_BINDING_NOT_FOUND");
+      },
+      listCdpTabs: async () => [tab],
+      getCdpState: async () => ({ ok: true, tab, state: { hasPrompt: true, isGenerating: false, attachmentCount: 0 } }),
+      writeBoundCdpTarget: async (sessionName, binding) => {
+        writtenBinding = { sessionName, binding };
+      },
+    },
+  );
+
+  const response = await registered.get("chatgpt_cdp_prepare_session").handler({
+    baseUrl: "http://127.0.0.1:9222",
+    sessionName: "review",
+  });
+
+  assert.equal(response.structuredContent.ok, true);
+  assert.equal(response.structuredContent.ready, true);
+  assert.equal(response.structuredContent.state, "ready");
+  assert.equal(response.structuredContent.nextStep, "ready");
+  assert.equal(writtenBinding.sessionName, "review");
+  assert.equal(writtenBinding.binding.tabId, "tab-1");
+});
+
 test("registerUiaTools registers the expected UIA tools", () => {
   const registered = new Map();
   registerUiaTools(

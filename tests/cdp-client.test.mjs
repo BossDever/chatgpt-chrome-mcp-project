@@ -8,7 +8,12 @@ import {
   isAttachmentRemoveControlLabel,
   normalizeForTurnMatch,
   summarizeRemoveAttachmentResult,
+  withCdpTabLock,
 } from "../src/cdp-client.mjs";
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 test("defaultChromePath honors explicit environment override", () => {
   const previousChatGpt = process.env.CHATGPT_CHROME_PATH;
@@ -167,4 +172,44 @@ test("remove attachment summary reports incomplete states", () => {
       remainingCount: 0,
     },
   );
+});
+
+test("CDP tab lock times out queued callers without breaking later queueing", async () => {
+  let releaseFirst;
+  let firstStarted = false;
+  const firstDone = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  const lockTarget = { baseUrl: "http://127.0.0.1:9999", tabId: "tab-lock-test" };
+  const first = withCdpTabLock(lockTarget, async () => {
+    firstStarted = true;
+    await firstDone;
+    return "first";
+  });
+
+  while (!firstStarted) await sleep(1);
+
+  await assert.rejects(
+    withCdpTabLock({ ...lockTarget, queueWaitTimeoutMs: 10 }, async () => "second"),
+    (error) => {
+      assert.equal(error.errorCode, "CDP_TAB_LOCK_QUEUE_TIMEOUT");
+      assert.equal(error.code, "CDP_TAB_LOCK_QUEUE_TIMEOUT");
+      assert.equal(typeof error.queueWaitMs, "number");
+      return true;
+    },
+  );
+
+  let thirdStarted = false;
+  const third = withCdpTabLock({ ...lockTarget, queueWaitTimeoutMs: 1000 }, async () => {
+    thirdStarted = true;
+    return "third";
+  });
+
+  await sleep(25);
+  assert.equal(thirdStarted, false);
+  releaseFirst();
+
+  assert.equal(await first, "first");
+  assert.equal(await third, "third");
 });

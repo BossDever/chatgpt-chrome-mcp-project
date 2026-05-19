@@ -62,13 +62,14 @@ function assertChatGptTab(tab) {
 }
 
 export async function withCdpTabLock(
-  { baseUrl = defaultCdpBaseUrl(), tabId },
+  { baseUrl = defaultCdpBaseUrl(), tabId, queueWaitTimeoutMs = 30000 },
   fn,
 ) {
   if (!tabId) return fn();
 
   const key = `${normalizeBaseUrl(baseUrl)}|${tabId}`;
   const previous = cdpQueues.get(key) ?? Promise.resolve();
+  const queuedAt = Date.now();
   let release;
   const gate = new Promise((resolve) => {
     release = resolve;
@@ -76,22 +77,58 @@ export async function withCdpTabLock(
   const next = previous.catch(() => {}).then(() => gate);
   cdpQueues.set(key, next);
 
-  await previous.catch(() => {});
+  let queueTimer = null;
+  let queueTimedOut = false;
   try {
-    return await fn();
+    await Promise.race([
+      previous.catch(() => {}),
+      new Promise((_, reject) => {
+        queueTimer = setTimeout(() => {
+          queueTimedOut = true;
+          const error = new Error(`CDP_TAB_LOCK_QUEUE_TIMEOUT: ${key}`);
+          error.code = "CDP_TAB_LOCK_QUEUE_TIMEOUT";
+          error.errorCode = "CDP_TAB_LOCK_QUEUE_TIMEOUT";
+          error.queueWaitMs = Date.now() - queuedAt;
+          error.queueWaitTimeoutMs = queueWaitTimeoutMs;
+          reject(error);
+        }, queueWaitTimeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    release();
+    if (cdpQueues.get(key) === next) cdpQueues.set(key, previous);
+    throw error;
+  } finally {
+    if (queueTimer) clearTimeout(queueTimer);
+  }
+
+  const lockAcquiredAt = Date.now();
+  try {
+    return await fn({
+      lockKey: key,
+      queueWaitMs: lockAcquiredAt - queuedAt,
+      queueWaitTimeoutMs,
+      lockAcquiredAt,
+      queueTimedOut,
+    });
   } finally {
     release();
     if (cdpQueues.get(key) === next) cdpQueues.delete(key);
   }
 }
 
-async function withLockedCdpTab({ baseUrl = defaultCdpBaseUrl(), tab, lockTimeoutMs = 120000 }, fn) {
+async function withLockedCdpTab({
+  baseUrl = defaultCdpBaseUrl(),
+  tab,
+  lockTimeoutMs = 120000,
+  queueWaitTimeoutMs = lockTimeoutMs,
+}, fn) {
   if (!tab?.webSocketDebuggerUrl) {
     throw new Error("Selected CDP tab does not expose webSocketDebuggerUrl.");
   }
 
   const key = `${normalizeBaseUrl(baseUrl)}|${tab.id}`;
-  return withCdpTabLock({ baseUrl, tabId: tab.id }, async () => {
+  return withCdpTabLock({ baseUrl, tabId: tab.id, queueWaitTimeoutMs }, async () => {
     const session = new CdpSession(tab.webSocketDebuggerUrl);
     let timedOut = false;
     let timer = null;

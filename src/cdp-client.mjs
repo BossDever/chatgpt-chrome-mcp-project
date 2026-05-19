@@ -9,6 +9,7 @@ import {
   chatGptGeneratedImageScript,
   saveImageArtifactFromPage,
 } from "./image-artifact-saver.mjs";
+import { verifyLocalUploadFile } from "./file-safety.mjs";
 
 export { isAttachmentRemoveControlLabel } from "./chatgpt-dom-adapter.mjs";
 
@@ -43,7 +44,20 @@ export function sleep(ms) {
 }
 
 function normalizeBaseUrl(baseUrl = defaultCdpBaseUrl()) {
-  return baseUrl.replace(/\/+$/, "");
+  const normalized = String(baseUrl ?? "").replace(/\/+$/, "");
+  const parsed = new URL(normalized);
+  const hostname = parsed.hostname.toLowerCase();
+  const localHost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+  const allowRemote = process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP === "1" || process.env.MCP_ALLOW_REMOTE_CDP === "1";
+  if (!localHost && !allowRemote) {
+    const error = new Error("REMOTE_CDP_BLOCKED: remote Chrome DevTools baseUrl is disabled by default");
+    error.code = "REMOTE_CDP_BLOCKED";
+    error.errorCode = "REMOTE_CDP_BLOCKED";
+    error.remoteCdpAllowed = false;
+    error.baseUrlHost = hostname;
+    throw error;
+  }
+  return normalized;
 }
 
 function sha256Text(text) {
@@ -174,12 +188,14 @@ async function fetchJson(url, { timeoutMs = 5000, method = "GET" } = {}) {
 }
 
 export async function cdpStatus({ baseUrl = defaultCdpBaseUrl(), timeoutMs = 2500 } = {}) {
-  const normalized = normalizeBaseUrl(baseUrl);
   try {
+    const normalized = normalizeBaseUrl(baseUrl);
+    const remoteCdpAllowed = process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP === "1" || process.env.MCP_ALLOW_REMOTE_CDP === "1";
     const version = await fetchJson(`${normalized}/json/version`, { timeoutMs });
     return {
       ok: true,
       baseUrl: normalized,
+      remoteCdpAllowed,
       browser: version.Browser ?? null,
       protocolVersion: version["Protocol-Version"] ?? null,
       userAgent: version["User-Agent"] ?? null,
@@ -188,9 +204,10 @@ export async function cdpStatus({ baseUrl = defaultCdpBaseUrl(), timeoutMs = 250
   } catch (error) {
     return {
       ok: false,
-      baseUrl: normalized,
-      errorCode: "CDP_NOT_AVAILABLE",
+      baseUrl,
+      errorCode: error.errorCode ?? "CDP_NOT_AVAILABLE",
       error: error.message,
+      remoteCdpAllowed: error.remoteCdpAllowed ?? (process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP === "1" || process.env.MCP_ALLOW_REMOTE_CDP === "1"),
     };
   }
 }
@@ -1179,6 +1196,7 @@ async function waitForAssistantReplyStable(
     timeoutMs = 120000,
     pollMs = 750,
     stableMs = 2000,
+    postStableReadDelayMs = 1500,
   } = {},
 ) {
   const startedAt = new Date().toISOString();
@@ -1190,6 +1208,8 @@ async function waitForAssistantReplyStable(
   let generationStoppedAt = null;
   let stableAt = null;
   let candidateHash = "";
+  let candidateLength = 0;
+  let candidateTurnIndex = -1;
   let candidateSince = 0;
   let lastState = null;
 
@@ -1208,10 +1228,35 @@ async function waitForAssistantReplyStable(
     if (hasNewAssistant && !lastState.isGenerating) {
       if (!generationStoppedAt) generationStoppedAt = new Date().toISOString();
 
-      if (candidateHash !== lastState.lastAssistantTextHash) {
+      if (
+        candidateHash !== lastState.lastAssistantTextHash ||
+        candidateLength !== lastState.lastAssistantTextLength ||
+        candidateTurnIndex !== lastState.lastAssistantTurnIndex
+      ) {
         candidateHash = lastState.lastAssistantTextHash;
+        candidateLength = lastState.lastAssistantTextLength;
+        candidateTurnIndex = lastState.lastAssistantTurnIndex;
         candidateSince = Date.now();
       } else if (Date.now() - candidateSince >= stableMs) {
+        if (postStableReadDelayMs > 0) {
+          await sleep(postStableReadDelayMs);
+          const verifiedState = await collectCdpState(session, tab, 20000);
+          if (
+            verifiedState.isGenerating ||
+            verifiedState.lastAssistantTurnIndex !== candidateTurnIndex ||
+            verifiedState.lastAssistantTextHash !== candidateHash ||
+            verifiedState.lastAssistantTextLength !== candidateLength
+          ) {
+            lastState = verifiedState;
+            candidateHash = verifiedState.lastAssistantTextHash;
+            candidateLength = verifiedState.lastAssistantTextLength;
+            candidateTurnIndex = verifiedState.lastAssistantTurnIndex;
+            candidateSince = Date.now();
+            await sleep(pollMs);
+            continue;
+          }
+          lastState = verifiedState;
+        }
         stableAt = new Date().toISOString();
         return {
           ok: true,
@@ -1228,6 +1273,8 @@ async function waitForAssistantReplyStable(
       }
     } else {
       candidateHash = "";
+      candidateLength = 0;
+      candidateTurnIndex = -1;
       candidateSince = 0;
     }
 
@@ -1337,6 +1384,20 @@ export async function uploadCdpFile({
   lockTimeoutMs = 120000,
 } = {}) {
   if (!filePath) throw new Error("filePath is required.");
+  const fileSafety = await verifyLocalUploadFile(filePath);
+  if (!fileSafety.safeForUpload) {
+    return {
+      ok: false,
+      errorCode: fileSafety.blockedExtension
+        ? "BLOCKED_UPLOAD_EXTENSION"
+        : !fileSafety.allowedExtension
+          ? "DISALLOWED_UPLOAD_EXTENSION"
+          : !fileSafety.withinMaxBytes
+            ? "UPLOAD_FILE_TOO_LARGE"
+            : "UNSAFE_UPLOAD_FILE",
+      fileSafety,
+    };
+  }
   const normalized = normalizeBaseUrl(baseUrl);
   const tab = await findCdpTab({ baseUrl: normalized, tabId });
   assertChatGptTab(tab);
@@ -1361,6 +1422,7 @@ export async function uploadCdpFile({
         ...directUpload,
         tab,
         stateBeforeUpload,
+        fileSafety,
       };
     }
 
@@ -1375,6 +1437,7 @@ export async function uploadCdpFile({
       directUploadAttempt: directUpload,
       tab,
       stateBeforeUpload,
+      fileSafety,
     };
   });
 }

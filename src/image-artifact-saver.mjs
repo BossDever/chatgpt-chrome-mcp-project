@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import {
+  defaultArtifactRoot,
+  isUnsafeFileName,
+  resolveSafeOutputDir,
+  safeRelativeArtifactPath,
+} from "./output-safety.mjs";
 
 export function sanitizeOutputFileName(value, fallback = "generated-image") {
   const cleaned = String(value || "")
@@ -9,7 +16,7 @@ export function sanitizeOutputFileName(value, fallback = "generated-image") {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 120);
-  return cleaned || fallback;
+  return !cleaned || isUnsafeFileName(cleaned) ? fallback : cleaned;
 }
 
 export function extensionForMime(mime) {
@@ -34,7 +41,8 @@ export function decodeBase64Image({ base64, dataUrl }) {
 }
 
 export async function writeImageArtifact({
-  outputDir = path.join(process.cwd(), "generated-downloads"),
+  outputDir,
+  outputRoot = defaultArtifactRoot(),
   fileNamePrefix = "chatgpt-generated-image",
   mime,
   base64,
@@ -43,11 +51,14 @@ export async function writeImageArtifact({
   const buffer = decodeBase64Image({ base64, dataUrl });
   const extension = extensionForMime(mime);
   const safePrefix = sanitizeOutputFileName(fileNamePrefix, "generated-image");
-  const filePath = path.join(outputDir, `${safePrefix}-${Date.now()}.${extension}`);
-  await mkdir(outputDir, { recursive: true });
+  const safeOutput = await resolveSafeOutputDir({ outputDir, rootDir: outputRoot });
+  const filePath = path.join(safeOutput.outputDir, `${safePrefix}-${Date.now()}.${extension}`);
   await writeFile(filePath, buffer);
   return {
     filePath,
+    relativeArtifactPath: safeRelativeArtifactPath(filePath, safeOutput.outputRoot),
+    outputRoot: safeOutput.outputRoot,
+    relativeOutputDir: safeOutput.relativeOutputDir,
     sha256: sha256Buffer(buffer),
     byteLength: buffer.length,
     extension,
@@ -245,6 +256,7 @@ export async function saveImageArtifactFromPage({
       ...pageResult,
       dryRun: true,
       filePath: null,
+      relativeArtifactPath: null,
       sha256: null,
       byteLength: null,
     };
@@ -259,6 +271,8 @@ export async function saveImageArtifactFromPage({
   return {
     ...pageResult,
     filePath: written.filePath,
+    relativeArtifactPath: written.relativeArtifactPath,
+    relativeOutputDir: written.relativeOutputDir,
     sha256: written.sha256,
     byteLength: written.byteLength,
     extension: written.extension,

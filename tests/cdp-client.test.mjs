@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   buildDuplicateFilenamePattern,
+  cdpStatus,
   defaultChromePath,
   getOwnUserTurnVerification,
   isAttachmentRemoveControlLabel,
   normalizeForTurnMatch,
   summarizeRemoveAttachmentResult,
+  uploadCdpFile,
   withCdpTabLock,
 } from "../src/cdp-client.mjs";
 
@@ -42,6 +47,50 @@ test("attachment remove labels require a command prefix", () => {
   assert.equal(isAttachmentRemoveControlLabel("Please remove cdp-remove-test.txt"), false);
   assert.equal(isAttachmentRemoveControlLabel("review-remove-plan.txt"), false);
   assert.equal(isAttachmentRemoveControlLabel("ไฟล์ที่ต้อง remove.zip"), false);
+});
+
+test("lower-level CDP upload rejects unsafe files before resolving a browser tab", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "chatgpt-upload-safety-"));
+  const scriptPath = path.join(dir, "unsafe.ps1");
+  await writeFile(scriptPath, "Write-Host unsafe", "utf8");
+
+  const result = await uploadCdpFile({
+    baseUrl: "http://127.0.0.1:1",
+    tabId: "missing-tab",
+    filePath: scriptPath,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "BLOCKED_UPLOAD_EXTENSION");
+  assert.equal(result.fileSafety.safeForUpload, false);
+});
+
+test("CDP baseUrl rejects remote hosts by default and allows explicit opt-in", async () => {
+  const previousProvider = process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP;
+  const previousShared = process.env.MCP_ALLOW_REMOTE_CDP;
+  try {
+    delete process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP;
+    delete process.env.MCP_ALLOW_REMOTE_CDP;
+
+    const blocked = await cdpStatus({ baseUrl: "http://192.168.1.10:9222", timeoutMs: 1 });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.errorCode, "REMOTE_CDP_BLOCKED");
+    assert.equal(blocked.remoteCdpAllowed, false);
+
+    const local = await cdpStatus({ baseUrl: "http://localhost:1", timeoutMs: 1 });
+    assert.equal(local.ok, false);
+    assert.notEqual(local.errorCode, "REMOTE_CDP_BLOCKED");
+
+    process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP = "1";
+    const optedIn = await cdpStatus({ baseUrl: "http://192.168.1.10:9222", timeoutMs: 1 });
+    assert.equal(optedIn.remoteCdpAllowed, true);
+    assert.notEqual(optedIn.errorCode, "REMOTE_CDP_BLOCKED");
+  } finally {
+    if (previousProvider === undefined) delete process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP;
+    else process.env.CHATGPT_CHROME_MCP_ALLOW_REMOTE_CDP = previousProvider;
+    if (previousShared === undefined) delete process.env.MCP_ALLOW_REMOTE_CDP;
+    else process.env.MCP_ALLOW_REMOTE_CDP = previousShared;
+  }
 });
 
 test("duplicate filename pattern matches ChatGPT duplicate names only", () => {

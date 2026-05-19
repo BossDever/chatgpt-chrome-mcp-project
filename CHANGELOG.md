@@ -44,7 +44,7 @@ This is the first documented stable baseline for the local
 - `npm run check` passes.
 - `node --test` passes 37 tests.
 - `npm run check:smoke` passes in the current CDP environment.
-- Live CDP smoke verifies 26 total tools, 12 CDP tools, 14 UIA tools, strict
+- Live CDP smoke verifies 28 total tools, 14 CDP tools, 14 UIA tools, strict
   bound tab state, and no binding warnings.
 - Optional live upload/remove smoke passed with
   `chatgpt_paste_upload_test.txt`, verifying attachment count moves from 0 to 1
